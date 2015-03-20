@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -24,38 +27,19 @@ type Client struct {
 	baseurl string
 }
 
-// [
-//   {
-//     "data": [
-//       {
-//         "timestamp": 1426763542757,
-//         "value": 1.45
-//       },
-//       {
-//         "timestamp": 1426763540757,
-//         "value": 2.0
-//       }
-//     ],
-//     "name": "test.numeric.multi"
-//   }
-// ]
-
 // Sent and received stuff
 
 type MetricHeader struct {
-	Name string    `json:"name"`
+	Id   string    `json:"id"`
 	Data []*Metric `json:"data"`
 }
 
-// Name and value are mandatory, Timestamp is optional. Value should be float64 for numeric values
+// Value is mandatory, Timestamp is optional. Value should be convertible to float64 for numeric values
+// Timestamp is milliseconds since epoch
 type Metric struct {
-	Name      string `json:"-"` // Should we always just fill this from different response?
-	Timestamp int64  `json:"timestamp"`
-	// Value     float64 `json:"value"`
-	Value interface{} `json:"value"`
+	Timestamp int64       `json:"timestamp"`
+	Value     interface{} `json:"value"`
 }
-
-// This is generic error instance?
 
 type HawkularError struct {
 	ErrorMsg string `json:"errorMsg"`
@@ -71,16 +55,52 @@ func NewHawkularClient(p Parameters) (*Client, error) {
 
 // func (self *Client) CreateMetric(name string, value float64)
 
-func (self *Client) PushSingleNumericMetric(m *Metric) error {
-	if &m.Timestamp == nil {
-		m.Timestamp = time.Now().Unix()
+// Take input of single Metric instance and modify it to fit our multiPut
+func (self *Client) PushSingleNumericMetric(id string, m Metric) error {
+	f, err := self.convertToFloat64(m.Value)
+	if err != nil {
+		return err
 	}
-	var mType string
-	if _, ok := m.Value.(float64); ok {
-		mType = "numeric"
+
+	nM := &Metric{Timestamp: m.Timestamp, Value: f}
+	if nM.Timestamp == 0 {
+		nM.Timestamp = time.Now().UnixNano() / 1e6
 	}
-	mH := MetricHeader{Name: m.Name, Data: []*Metric{m}}
-	return self.WriteMultiple(mType, []MetricHeader{mH})
+
+	mH := MetricHeader{Id: id, Data: []*Metric{nM}}
+	return self.WriteMultiple(self.metricType(nM.Value), []MetricHeader{mH})
+}
+
+func (self *Client) QuerySingleNumericMetric(id string, options map[string]string) ([]Metric, error) {
+	g, err := self.paramUrl(self.dataUrl(self.singleMetricsUrl("numeric", id)), options)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Get(g)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return []Metric{}, nil
+	} else if resp.StatusCode == http.StatusOK {
+		b, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+
+		metrics := []Metric{}
+		err = json.Unmarshal(b, &metrics)
+		if err != nil {
+			return nil, err
+		}
+		return metrics, nil
+	} else {
+		return nil, self.parseErrorResponse(resp)
+	}
 }
 
 func (self *Client) WriteMultiple(metricType string, metrics []MetricHeader) error {
@@ -88,19 +108,17 @@ func (self *Client) WriteMultiple(metricType string, metrics []MetricHeader) err
 	if err != nil {
 		return err
 	}
-	return self.write(self.metricsDataUrl(metricType), json)
+	return self.write(self.dataUrl(self.metricsUrl(metricType)), json)
 }
 
 func (self *Client) write(url string, json []byte) error {
-	fmt.Println(string(json))
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(json))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	// @TODO Detect when 204 is acceptable answer
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return self.parseErrorResponse(resp)
 	}
 	return nil
@@ -127,6 +145,74 @@ func (self *Client) metricsUrl(metricType string) string {
 	return fmt.Sprintf("%s%s/metrics/%s", self.baseurl, self.tenant, metricType)
 }
 
-func (self *Client) metricsDataUrl(metricType string) string {
-	return fmt.Sprintf("%s/data", self.metricsUrl(metricType))
+// func (self *Client) metricsDataUrl(metricType string) string {
+// 	return fmt.Sprintf("%s/data", self.metricsUrl(metricType))
+// }
+
+func (self *Client) singleMetricsUrl(metricType string, id string) string {
+	return fmt.Sprintf("%s/%s", self.metricsUrl(metricType), id)
+}
+
+func (self *Client) dataUrl(url string) string {
+	return fmt.Sprintf("%s/data", url)
+}
+
+func (self *Client) paramUrl(starturl string, options map[string]string) (string, error) {
+	u, err := url.Parse(starturl)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	for k, v := range options {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+func (self *Client) metricType(value interface{}) string {
+	var mType string
+	if _, ok := value.(float64); ok {
+		mType = "numeric"
+	} else {
+		mType = "availability"
+	}
+	return mType
+}
+
+func (self *Client) convertToFloat64(v interface{}) (float64, error) {
+	switch i := v.(type) {
+	case float64:
+		return float64(i), nil
+	case float32:
+		return float64(i), nil
+	case int64:
+		return float64(i), nil
+	case int32:
+		return float64(i), nil
+	case int16:
+		return float64(i), nil
+	case int8:
+		return float64(i), nil
+	case uint64:
+		return float64(i), nil
+	case uint32:
+		return float64(i), nil
+	case uint16:
+		return float64(i), nil
+	case uint8:
+		return float64(i), nil
+	case int:
+		return float64(i), nil
+	case uint:
+		return float64(i), nil
+	case string:
+		f, err := strconv.ParseFloat(i, 64)
+		if err != nil {
+			return math.NaN(), err
+		}
+		return f, err
+	default:
+		return math.NaN(), fmt.Errorf("Cannot convert %s to float64", i)
+	}
 }
