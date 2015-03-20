@@ -72,7 +72,6 @@ func NewHawkularClient(p Parameters) (*Client, error) {
 // func (self *Client) CreateMetric(name string, value float64)
 
 func (self *Client) PushSingleNumericMetric(m *Metric) error {
-	// @TODO modify to multinumeric batch
 	if &m.Timestamp == nil {
 		m.Timestamp = time.Now().Unix()
 	}
@@ -81,30 +80,15 @@ func (self *Client) PushSingleNumericMetric(m *Metric) error {
 		mType = "numeric"
 	}
 	mH := MetricHeader{Name: m.Name, Data: []*Metric{m}}
-	return self.WriteMultiple(self.metricsUrl(mType), []MetricHeader{mH})
+	return self.WriteMultiple(mType, []MetricHeader{mH})
 }
 
-func (self *Client) PostNumericMetric(name string, value float64) error {
-
-	nM := Metric{Timestamp: time.Now().Unix(), Value: value}
-	mH := MetricHeader{Name: name, Data: []*Metric{&nM}}
-
-	json, err := json.Marshal(&[]MetricHeader{mH})
-	if err != nil {
-		return err
-	}
-
-	self.write(self.metricsUrl("numeric"), json)
-
-	return nil
-}
-
-func (self *Client) WriteMultiple(url string, metrics []MetricHeader) error {
+func (self *Client) WriteMultiple(metricType string, metrics []MetricHeader) error {
 	json, err := json.Marshal(&metrics)
 	if err != nil {
 		return err
 	}
-	return self.write(url, json)
+	return self.write(self.metricsDataUrl(metricType), json)
 }
 
 func (self *Client) write(url string, json []byte) error {
@@ -140,5 +124,9 @@ func (self *Client) parseErrorResponse(resp *http.Response) error {
 }
 
 func (self *Client) metricsUrl(metricType string) string {
-	return fmt.Sprintf("%s%s/metrics/%s/data", self.baseurl, self.tenant, metricType)
+	return fmt.Sprintf("%s%s/metrics/%s", self.baseurl, self.tenant, metricType)
+}
+
+func (self *Client) metricsDataUrl(metricType string) string {
+	return fmt.Sprintf("%s/data", self.metricsUrl(metricType))
 }
