@@ -66,4 +66,45 @@ func TestAddNumericSingle(t *testing.T) {
 }
 
 func TestAddNumericMulti(t *testing.T) {
+
+	if c, err := integrationClient(); err == nil {
+
+		mone := &Metric{Value: 1.45, Timestamp: UnixMilli()}
+		hone := MetricHeader{Id: "test.multi.numeric.1",
+			Data: []*Metric{mone}}
+
+		mtwo_1 := &Metric{Value: 2, Timestamp: UnixMilli()}
+
+		mtwo_2_t := UnixMilli() - 1e3
+
+		mtwo_2 := &Metric{Value: float64(4.56), Timestamp: mtwo_2_t}
+		htwo := MetricHeader{Id: "test.multi.numeric.2", Data: []*Metric{mtwo_1, mtwo_2}}
+
+		h := []MetricHeader{hone, htwo}
+
+		err = c.WriteMultiple(Numeric, h)
+		if err != nil {
+			t.Error(err)
+		}
+
+		var getMetric = func(id string) []Metric {
+			metric, err := c.QuerySingleNumericMetric(id, make(map[string]string))
+			if err != nil {
+				t.Error(err)
+			}
+			return metric
+		}
+
+		m := getMetric("test.multi.numeric.1")
+		if len(m) != 1 {
+			t.Error(fmt.Errorf("Received %d metrics instead of 1", len(m)))
+		}
+
+		m = getMetric("test.multi.numeric.2")
+		if len(m) != 2 {
+			t.Error(fmt.Errorf("Received %d metrics, expected 2", len(m)))
+		}
+	} else {
+		t.Error(err)
+	}
 }
