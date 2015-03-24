@@ -2,6 +2,8 @@ package client
 
 // package metrics instead? As this is metrics-only client, not other Hawkular..
 
+// TODO: CreateMetrics interfaces, support tags, remove *Metric (we don't want pointers)
+
 import (
 	"bytes"
 	"encoding/json"
@@ -62,15 +64,15 @@ type Parameters struct {
 }
 
 type Client struct {
-	tenant  string
-	baseurl string
+	Tenant  string
+	Baseurl string
 }
 
 func NewHawkularClient(p Parameters) (*Client, error) {
 	url := fmt.Sprintf("http://%s:%d/hawkular-metrics/", p.Host, p.Port)
 	return &Client{
-		baseurl: url,
-		tenant:  p.Tenant,
+		Baseurl: url,
+		Tenant:  p.Tenant,
 	}, nil
 }
 
@@ -107,7 +109,6 @@ func (self *Client) WriteMultiple(metricType MetricType, metrics []MetricHeader)
 }
 
 func (self *Client) query(url string, options map[string]string) ([]Metric, error) {
-	fmt.Println("query: " + url)
 	g, err := self.paramUrl(url, options)
 	if err != nil {
 		return nil, err
@@ -140,10 +141,6 @@ func (self *Client) query(url string, options map[string]string) ([]Metric, erro
 }
 
 func (self *Client) write(url string, json []byte) error {
-
-	fmt.Println("WriteUrl: " + url)
-	fmt.Println("Payload: " + string(json))
-
 	if resp, err := http.Post(url, "application/json", bytes.NewBuffer(json)); err == nil {
 		defer resp.Body.Close()
 
@@ -174,7 +171,7 @@ func (self *Client) parseErrorResponse(resp *http.Response) error {
 }
 
 func (self *Client) metricsUrl(metricType MetricType) string {
-	return fmt.Sprintf("%s%s/metrics/%s", self.baseurl, self.tenant, metricType.String())
+	return fmt.Sprintf("%s%s/metrics/%s", self.Baseurl, self.Tenant, metricType.String())
 }
 
 func (self *Client) singleMetricsUrl(metricType MetricType, id string) string {
