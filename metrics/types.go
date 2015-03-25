@@ -1,4 +1,4 @@
-package client
+package metrics
 
 // Hawkular-Metrics external structs
 
@@ -16,4 +16,10 @@ type Metric struct {
 
 type HawkularError struct {
 	ErrorMsg string `json:"errorMsg"`
+}
+
+type MetricDefinition struct {
+	Id            string            `json:"id"`
+	Tags          map[string]string `json:"tags,omitempty"`
+	RetentionTime int               `json:"dataRetention,omitempty"`
 }

@@ -1,4 +1,4 @@
-package client
+package metrics
 
 // package metrics instead? As this is metrics-only client, not other Hawkular..
 
@@ -68,12 +68,29 @@ type Client struct {
 	Baseurl string
 }
 
+type HawkularClientError struct {
+	msg  string
+	Code int
+}
+
+func (self *HawkularClientError) Error() string {
+	return fmt.Sprintf("Hawkular returned status code %d, error message: %s", self.Code, self.msg)
+}
+
 func NewHawkularClient(p Parameters) (*Client, error) {
 	url := fmt.Sprintf("http://%s:%d/hawkular-metrics/", p.Host, p.Port)
 	return &Client{
 		Baseurl: url,
 		Tenant:  p.Tenant,
 	}, nil
+}
+
+func (self *Client) Create(t MetricType, md MetricDefinition) error {
+	jsonb, err := json.Marshal(&md)
+	if err != nil {
+		return err
+	}
+	return self.post(self.metricsUrl(t), jsonb)
 }
 
 // Take input of single Metric instance. If Timestamp is not defined, use current time
@@ -101,11 +118,11 @@ func (self *Client) WriteMultiple(metricType MetricType, metrics []MetricHeader)
 		return err
 	}
 
-	json, err := json.Marshal(&metrics)
+	jsonb, err := json.Marshal(&metrics)
 	if err != nil {
 		return err
 	}
-	return self.write(self.dataUrl(self.metricsUrl(metricType)), json)
+	return self.post(self.dataUrl(self.metricsUrl(metricType)), jsonb)
 }
 
 func (self *Client) query(url string, options map[string]string) ([]Metric, error) {
@@ -140,11 +157,11 @@ func (self *Client) query(url string, options map[string]string) ([]Metric, erro
 	}
 }
 
-func (self *Client) write(url string, json []byte) error {
+func (self *Client) post(url string, json []byte) error {
 	if resp, err := http.Post(url, "application/json", bytes.NewBuffer(json)); err == nil {
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 			return self.parseErrorResponse(resp)
 		}
 		return nil
@@ -157,17 +174,23 @@ func (self *Client) parseErrorResponse(resp *http.Response) error {
 	// Parse error messages here correctly..
 	reply, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Got status code %d, reply could not be parsed: %s", resp.StatusCode, err.Error())
+		return &HawkularClientError{Code: resp.StatusCode,
+			msg: fmt.Sprintf("Reply could not be parsed: %s", err.Error()),
+		}
 	}
 
 	details := &HawkularError{}
 
 	err = json.Unmarshal(reply, details)
 	if err != nil {
-		return fmt.Errorf("Got status code %d, reply could not be parsed: %s", resp.StatusCode, err.Error())
+		return &HawkularClientError{Code: resp.StatusCode,
+			msg: fmt.Sprintf("Reply could not be parsed: %s", err.Error()),
+		}
 	}
 
-	return fmt.Errorf("Got status code %d, error: %s", resp.StatusCode, details.ErrorMsg)
+	return &HawkularClientError{Code: resp.StatusCode,
+		msg: details.ErrorMsg,
+	}
 }
 
 func (self *Client) metricsUrl(metricType MetricType) string {
