@@ -1,9 +1,5 @@
 package metrics
 
-// package metrics instead? As this is metrics-only client, not other Hawkular..
-
-// TODO: CreateMetrics interfaces, support tags, remove *Metric (we don't want pointers)
-
 import (
 	"bytes"
 	"encoding/json"
@@ -55,6 +51,17 @@ func (self MetricType) shortForm() string {
 	return shortForm[self]
 }
 
+// More detailed error
+
+type HawkularClientError struct {
+	msg  string
+	Code int
+}
+
+func (self *HawkularClientError) Error() string {
+	return fmt.Sprintf("Hawkular returned status code %d, error message: %s", self.Code, self.msg)
+}
+
 // Client creation and instance config
 
 type Parameters struct {
@@ -68,15 +75,6 @@ type Client struct {
 	Baseurl string
 }
 
-type HawkularClientError struct {
-	msg  string
-	Code int
-}
-
-func (self *HawkularClientError) Error() string {
-	return fmt.Sprintf("Hawkular returned status code %d, error message: %s", self.Code, self.msg)
-}
-
 func NewHawkularClient(p Parameters) (*Client, error) {
 	url := fmt.Sprintf("http://%s:%d/hawkular-metrics/", p.Host, p.Port)
 	return &Client{
@@ -84,6 +82,8 @@ func NewHawkularClient(p Parameters) (*Client, error) {
 		Tenant:  p.Tenant,
 	}, nil
 }
+
+// Public functions
 
 func (self *Client) Create(t MetricType, md MetricDefinition) error {
 	jsonb, err := json.Marshal(&md)
@@ -95,18 +95,21 @@ func (self *Client) Create(t MetricType, md MetricDefinition) error {
 
 // Take input of single Metric instance. If Timestamp is not defined, use current time
 func (self *Client) PushSingleNumericMetric(id string, m Metric) error {
-	f, err := ConvertToFloat64(m.Value)
-	if err != nil {
-		return err
+
+	if _, ok := m.Value.(float64); !ok {
+		f, err := ConvertToFloat64(m.Value)
+		if err != nil {
+			return err
+		}
+		m.Value = f
 	}
 
-	nM := &Metric{Timestamp: m.Timestamp, Value: f}
-	if nM.Timestamp == 0 {
-		nM.Timestamp = UnixMilli()
+	if m.Timestamp == 0 {
+		m.Timestamp = UnixMilli(time.Now())
 	}
 
-	mH := MetricHeader{Id: id, Data: []*Metric{nM}}
-	return self.WriteMultiple(self.metricType(nM.Value), []MetricHeader{mH})
+	mH := MetricHeader{Id: id, Data: []Metric{m}}
+	return self.WriteMultiple(Numeric, []MetricHeader{mH})
 }
 
 func (self *Client) QuerySingleNumericMetric(id string, options map[string]string) ([]Metric, error) {
@@ -124,6 +127,8 @@ func (self *Client) WriteMultiple(metricType MetricType, metrics []MetricHeader)
 	}
 	return self.post(self.dataUrl(self.metricsUrl(metricType)), jsonb)
 }
+
+// Helper functions
 
 func (self *Client) query(url string, options map[string]string) ([]Metric, error) {
 	g, err := self.paramUrl(url, options)
@@ -193,6 +198,16 @@ func (self *Client) parseErrorResponse(resp *http.Response) error {
 	}
 }
 
+func (self *Client) metricType(value interface{}) MetricType {
+	if _, ok := value.(float64); ok {
+		return Numeric
+	} else {
+		return Availability
+	}
+}
+
+// URL functions (...)
+
 func (self *Client) metricsUrl(metricType MetricType) string {
 	return fmt.Sprintf("%s%s/metrics/%s", self.Baseurl, self.Tenant, metricType.String())
 }
@@ -216,14 +231,6 @@ func (self *Client) paramUrl(starturl string, options map[string]string) (string
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
-}
-
-func (self *Client) metricType(value interface{}) MetricType {
-	if _, ok := value.(float64); ok {
-		return Numeric
-	} else {
-		return Availability
-	}
 }
 
 // Following methods are to ease the work of the client users
@@ -265,7 +272,7 @@ func ConvertToFloat64(v interface{}) (float64, error) {
 	}
 }
 
-// Returns
-func UnixMilli() int64 {
-	return time.Now().UnixNano() / 1e6
+// Returns milliseconds since epoch
+func UnixMilli(t time.Time) int64 {
+	return t.UnixNano() / 1e6
 }

@@ -116,16 +116,16 @@ func TestAddNumericMulti(t *testing.T) {
 
 	if c, err := integrationClient(); err == nil {
 
-		mone := &Metric{Value: 1.45, Timestamp: UnixMilli()}
+		mone := Metric{Value: 1.45, Timestamp: UnixMilli()}
 		hone := MetricHeader{Id: "test.multi.numeric.1",
-			Data: []*Metric{mone}}
+			Data: []Metric{mone}}
 
-		mtwo_1 := &Metric{Value: 2, Timestamp: UnixMilli()}
+		mtwo_1 := Metric{Value: 2, Timestamp: UnixMilli()}
 
 		mtwo_2_t := UnixMilli() - 1e3
 
-		mtwo_2 := &Metric{Value: float64(4.56), Timestamp: mtwo_2_t}
-		htwo := MetricHeader{Id: "test.multi.numeric.2", Data: []*Metric{mtwo_1, mtwo_2}}
+		mtwo_2 := Metric{Value: float64(4.56), Timestamp: mtwo_2_t}
+		htwo := MetricHeader{Id: "test.multi.numeric.2", Data: []Metric{mtwo_1, mtwo_2}}
 
 		h := []MetricHeader{hone, htwo}
 
