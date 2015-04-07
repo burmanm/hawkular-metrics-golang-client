@@ -35,23 +35,17 @@ func TestCreate(t *testing.T) {
 	}
 
 	md := MetricDefinition{Id: "test.metric.create.numeric.1"}
-	if err = c.Create(Numeric, md); err != nil {
+	if _, err = c.Create(Numeric, md); err != nil {
 		t.Error(err.Error())
 	}
 
 	// Try to recreate the same..
-	err = c.Create(Numeric, md)
-
+	ok, err = c.Create(Numeric, md)
+	if ok {
+		t.Fail("Should have received fail when recreating them same metric")
+	}
 	if err != nil {
-		if err, ok := err.(*HawkularClientError); ok {
-			if err.Code != http.StatusConflict {
-				t.Errorf("Should have received conflict code, instead got %d", err.Code)
-			}
-		} else {
-			t.Errorf("Could not parse error reply from Hawkular, %s", err.Error())
-		}
-	} else {
-		t.Fail()
+		t.Errorf("Could not parse error reply from Hawkular, %s", err.Error())
 	}
 
 	// Use tags and dataRetention

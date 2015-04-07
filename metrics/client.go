@@ -85,12 +85,23 @@ func NewHawkularClient(p Parameters) (*Client, error) {
 
 // Public functions
 
-func (self *Client) Create(t MetricType, md MetricDefinition) error {
+// Creates a new metric, and returns true if creation succeeded, false if not (metric was already created).
+// err is returned only in case of another error than 'metric already created'
+func (self *Client) Create(t MetricType, md MetricDefinition) (bool, error) {
 	jsonb, err := json.Marshal(&md)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return self.post(self.metricsUrl(t), jsonb)
+	err = self.post(self.metricsUrl(t), jsonb)
+	if err, ok := err.(*HawkularClientError); ok {
+		if err.Code != http.StatusConflict {
+			return false, err
+		} else {
+			return false, nil
+		}
+	}
+	return true, nil
+
 }
 
 // Take input of single Metric instance. If Timestamp is not defined, use current time
