@@ -9,10 +9,10 @@ type MetricHeader struct {
 
 // Value should be convertible to float64 for numeric values
 // Timestamp is milliseconds since epoch
-// Tags here?
 type Metric struct {
-	Timestamp int64       `json:"timestamp"`
-	Value     interface{} `json:"value"`
+	Timestamp int64             `json:"timestamp"`
+	Value     interface{}       `json:"value"`
+	Tags      map[string]string `json:"tags,omitempty"`
 }
 
 type HawkularError struct {

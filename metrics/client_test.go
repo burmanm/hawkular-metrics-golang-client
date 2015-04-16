@@ -3,21 +3,21 @@ package metrics
 import (
 	"crypto/rand"
 	"fmt"
-	"net/http"
 	"testing"
 	"time"
 )
 
 func integrationClient() (*Client, error) {
-	t, err := randomTenant()
+	t, err := randomString()
 	if err != nil {
 		return nil, err
 	}
 	p := Parameters{Tenant: t, Port: 8081, Host: "localhost"}
+	// p := Parameters{Tenant: t, Port: 18080, Host: "209.132.178.218"}
 	return NewHawkularClient(p)
 }
 
-func randomTenant() (string, error) {
+func randomString() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -40,9 +40,9 @@ func TestCreate(t *testing.T) {
 	}
 
 	// Try to recreate the same..
-	ok, err = c.Create(Numeric, md)
+	ok, err := c.Create(Numeric, md)
 	if ok {
-		t.Fail("Should have received fail when recreating them same metric")
+		t.Error("Should have received fail when recreating them same metric")
 	}
 	if err != nil {
 		t.Errorf("Could not parse error reply from Hawkular, %s", err.Error())
@@ -54,12 +54,12 @@ func TestCreate(t *testing.T) {
 	tags["units"] = "bytes"
 	tags["env"] = "unittest"
 	md_tags := MetricDefinition{Id: "test.metric.create.numeric.2", Tags: tags}
-	if err = c.Create(Numeric, md_tags); err != nil {
+	if _, err = c.Create(Numeric, md_tags); err != nil {
 		t.Errorf(err.Error())
 	}
 
 	md_reten := MetricDefinition{Id: "test.metric.create.availability.1", RetentionTime: 12}
-	if err = c.Create(Availability, md_reten); err != nil {
+	if _, err = c.Create(Availability, md_reten); err != nil {
 		t.Errorf(err.Error())
 	}
 
@@ -106,17 +106,44 @@ func TestAddNumericSingle(t *testing.T) {
 
 }
 
+func TestTags(t *testing.T) {
+	if c, err := integrationClient(); err == nil {
+		tags := make(map[string]string)
+		tTag, err := randomString()
+		tags[tTag] = "testValue"
+
+		// Write with tags
+		m := Metric{Value: float64(0.01), Tags: tags}
+		err = c.PushSingleNumericMetric("test.tags.numeric.1", m)
+		if err != nil {
+			t.Error(err)
+		}
+
+		// Search metrics with tag
+
+		// 		    @GET
+		// @Path("/{tenantId}/numeric")
+		// @ApiOperation(value = "Find numeric metrics data by their tags.", response = Map.cla@ApiParam(value = "Tag list", required = true) @QueryParam("tags") Tags tags
+
+		// Get metric definition tags
+		// @Path("/{tenantId}/metrics/numeric/{id}/tags")
+		// @ApiOperation(value = "Retrieve tags associated with the metric definition.", response = Metric.class)
+
+		// Fetch a metric with values and check we still have tags
+	}
+}
+
 func TestAddNumericMulti(t *testing.T) {
 
 	if c, err := integrationClient(); err == nil {
 
-		mone := Metric{Value: 1.45, Timestamp: UnixMilli()}
+		mone := Metric{Value: 1.45, Timestamp: UnixMilli(time.Now())}
 		hone := MetricHeader{Id: "test.multi.numeric.1",
 			Data: []Metric{mone}}
 
-		mtwo_1 := Metric{Value: 2, Timestamp: UnixMilli()}
+		mtwo_1 := Metric{Value: 2, Timestamp: UnixMilli(time.Now())}
 
-		mtwo_2_t := UnixMilli() - 1e3
+		mtwo_2_t := UnixMilli(time.Now()) - 1e3
 
 		mtwo_2 := Metric{Value: float64(4.56), Timestamp: mtwo_2_t}
 		htwo := MetricHeader{Id: "test.multi.numeric.2", Data: []Metric{mtwo_1, mtwo_2}}
