@@ -18,16 +18,19 @@ type MetricType int
 const (
 	Numeric = iota
 	Availability
+	Counter
 )
 
 var longForm = []string{
 	"numeric",
 	"availability",
+	"counter",
 }
 
 var shortForm = []string{
 	"num",
 	"avail",
+	"counter",
 }
 
 func (self MetricType) validate() error {
@@ -66,7 +69,7 @@ func (self *HawkularClientError) Error() string {
 
 type Parameters struct {
 	Tenant string
-	Port   uint16
+	Port   int
 	Host   string
 }
 
@@ -76,7 +79,7 @@ type Client struct {
 }
 
 func NewHawkularClient(p Parameters) (*Client, error) {
-	url := fmt.Sprintf("http://%s:%d/hawkular-metrics/", p.Host, p.Port)
+	url := fmt.Sprintf("http://%s:%d/hawkular-metrics/%s", p.Host, p.Port, p.Tenant)
 	return &Client{
 		Baseurl: url,
 		Tenant:  p.Tenant,
@@ -220,7 +223,7 @@ func (self *Client) metricType(value interface{}) MetricType {
 // URL functions (...)
 
 func (self *Client) metricsUrl(metricType MetricType) string {
-	return fmt.Sprintf("%s%s/metrics/%s", self.Baseurl, self.Tenant, metricType.String())
+	return fmt.Sprintf("%s/metrics/%s", self.Baseurl, metricType.String())
 }
 
 func (self *Client) singleMetricsUrl(metricType MetricType, id string) string {
